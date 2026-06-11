@@ -1,8 +1,11 @@
+import hashlib
+import io
 import json
 
 import folium
 import requests
 import streamlit as st
+from audio_recorder_streamlit import audio_recorder
 from openai import OpenAI
 from streamlit_folium import st_folium
 
@@ -124,6 +127,8 @@ else:
         st.session_state.map_locations = []
     if "geocoded_names" not in st.session_state:
         st.session_state.geocoded_names = set()
+    if "last_audio_hash" not in st.session_state:
+        st.session_state.last_audio_hash = None
 
     # 대화 출력
     for message in st.session_state.messages:
@@ -140,8 +145,41 @@ else:
             height=420,
         )
 
-    # 입력 처리
-    if prompt := st.chat_input("예: 도쿄 3박 4일 여행 계획 짜줘 (예산 100만원)"):
+    # 음성 입력
+    st.write("")
+    col_mic, col_label = st.columns([1, 9])
+    with col_mic:
+        audio_bytes = audio_recorder(
+            text="",
+            recording_color="#e87070",
+            neutral_color="#6aa36f",
+            icon_name="microphone",
+            icon_size="2x",
+            pause_threshold=2.0,
+        )
+    with col_label:
+        st.caption("🎙️ 마이크 버튼을 눌러 말씀하시거나, 아래 입력창에 직접 입력하세요.")
+
+    voice_prompt = None
+    if audio_bytes:
+        audio_hash = hashlib.md5(audio_bytes).hexdigest()
+        if audio_hash != st.session_state.last_audio_hash:
+            st.session_state.last_audio_hash = audio_hash
+            with st.spinner("음성을 텍스트로 변환하는 중..."):
+                audio_file = io.BytesIO(audio_bytes)
+                audio_file.name = "audio.wav"
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="ko",
+                )
+            voice_prompt = transcript.text
+            st.toast(f"인식된 텍스트: {voice_prompt}", icon="🎙️")
+
+    # 입력 처리 (음성 또는 텍스트)
+    typed_prompt = st.chat_input("예: 도쿄 3박 4일 여행 계획 짜줘 (예산 100만원)")
+    prompt = voice_prompt or typed_prompt
+    if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)

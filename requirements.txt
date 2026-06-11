@@ -3,3 +3,4 @@ openai
 folium
 streamlit-folium
 requests
+audio-recorder-streamlit
