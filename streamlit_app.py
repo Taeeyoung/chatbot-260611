@@ -164,60 +164,76 @@ else:
     if "last_image_hash" not in st.session_state:
         st.session_state.last_image_hash = None
 
-    # 이미지 업로드
-    uploaded_file = st.file_uploader(
-        "📷 장소 이미지 업로드 (가게·명소 사진을 올리면 지도에 표시해드립니다)",
-        type=["jpg", "jpeg", "png", "webp"],
-        label_visibility="visible",
-    )
-    if uploaded_file:
-        image_bytes = uploaded_file.read()
-        image_hash = hashlib.md5(image_bytes).hexdigest()
-        if image_hash != st.session_state.last_image_hash:
-            st.session_state.last_image_hash = image_hash
-            col_img, col_result = st.columns([1, 2])
-            with col_img:
-                st.image(image_bytes, use_container_width=True)
-            with col_result:
-                with st.spinner("이미지에서 장소를 인식하는 중..."):
-                    place_name = identify_place_from_image(client, image_bytes, uploaded_file.type)
-                if place_name:
-                    result = geocode(place_name)
-                    if result and place_name not in st.session_state.geocoded_names:
-                        st.session_state.geocoded_names.add(place_name)
-                        st.session_state.map_locations.append(result)
-                        st.success(f"📍 지도에 추가됨: **{result[2].split(',')[0]}**")
-                        msg = f"이미지에서 **{place_name}** 를 인식했습니다. 지도에 표시했습니다."
-                    elif result:
-                        st.info(f"이미 지도에 표시된 장소입니다: {result[2].split(',')[0]}")
-                        msg = None
-                    else:
-                        st.warning(f"'{place_name}' 의 좌표를 찾지 못했습니다.")
-                        msg = None
-                else:
-                    st.warning("이미지에서 특정 장소를 인식하지 못했습니다. 더 선명하거나 간판이 보이는 사진을 시도해보세요.")
-                    msg = None
-                if msg:
-                    st.session_state.messages.append({"role": "assistant", "content": msg})
-                    st.rerun()
+    # ── 2. 사이드바 하단에 지도 표시 ─────────────────────────────────────────
+    with st.sidebar:
+        if st.session_state.map_locations:
+            st.divider()
+            st.subheader("🗺️ 추천 장소 지도")
+            st_folium(
+                build_map(st.session_state.map_locations),
+                use_container_width=True,
+                height=320,
+                returned_objects=[],
+            )
 
-    # 대화 출력
+    # ── 대화 출력 ────────────────────────────────────────────────────────────
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # 지도 출력 (장소가 있을 때만)
-    if st.session_state.map_locations:
-        st.divider()
-        st.subheader("🗺️ 추천 장소 지도")
-        st_folium(
-            build_map(st.session_state.map_locations),
-            use_container_width=True,
-            height=420,
-        )
+    # ── 1. 빈 화면 — 추천 질문 버튼 ──────────────────────────────────────────
+    if not st.session_state.messages:
+        st.markdown("**어떤 여행을 계획하고 계신가요? 아래 예시를 클릭해보세요.**")
+        suggestions = [
+            "도쿄 3박 4일 추천해줘 (예산 100만원)",
+            "방콕 가성비 여행 계획 짜줘",
+            "유럽 2주 일정 짜줘",
+            "제주도 당일치기 코스 알려줘",
+        ]
+        col1, col2 = st.columns(2)
+        for i, s in enumerate(suggestions):
+            if (col1 if i % 2 == 0 else col2).button(s, use_container_width=True):
+                st.session_state["_suggested"] = s
+                st.rerun()
 
-    # 음성 입력
-    st.write("")
+    # ── 입력 영역 ────────────────────────────────────────────────────────────
+    with st.expander("📷 이미지로 장소 찾기"):
+        uploaded_file = st.file_uploader(
+            "가게·명소 사진을 올리면 지도에 자동으로 표시해드립니다",
+            type=["jpg", "jpeg", "png", "webp"],
+            label_visibility="visible",
+        )
+        if uploaded_file:
+            image_bytes = uploaded_file.read()
+            image_hash = hashlib.md5(image_bytes).hexdigest()
+            if image_hash != st.session_state.last_image_hash:
+                st.session_state.last_image_hash = image_hash
+                col_img, col_result = st.columns([1, 2])
+                with col_img:
+                    st.image(image_bytes, use_container_width=True)
+                with col_result:
+                    with st.spinner("이미지에서 장소를 인식하는 중..."):
+                        place_name = identify_place_from_image(client, image_bytes, uploaded_file.type)
+                    if place_name:
+                        result = geocode(place_name)
+                        if result and place_name not in st.session_state.geocoded_names:
+                            st.session_state.geocoded_names.add(place_name)
+                            st.session_state.map_locations.append(result)
+                            st.success(f"📍 지도에 추가됨: **{result[2].split(',')[0]}**")
+                            msg = f"이미지에서 **{place_name}** 를 인식했습니다. 지도에 표시했습니다."
+                        elif result:
+                            st.info(f"이미 지도에 표시된 장소입니다: {result[2].split(',')[0]}")
+                            msg = None
+                        else:
+                            st.warning(f"'{place_name}' 의 좌표를 찾지 못했습니다.")
+                            msg = None
+                    else:
+                        st.warning("장소를 인식하지 못했습니다. 간판이 잘 보이는 사진을 시도해보세요.")
+                        msg = None
+                    if msg:
+                        st.session_state.messages.append({"role": "assistant", "content": msg})
+                        st.rerun()
+
     col_mic, col_label = st.columns([1, 9])
     with col_mic:
         audio_bytes = audio_recorder(
@@ -229,7 +245,7 @@ else:
             pause_threshold=2.0,
         )
     with col_label:
-        st.caption("🎙️ 마이크 버튼을 눌러 말씀하시거나, 아래 입력창에 직접 입력하세요.")
+        st.caption("🎙️ 말하거나 아래 입력창에 직접 입력하세요.")
 
     voice_prompt = None
     if audio_bytes:
@@ -247,9 +263,11 @@ else:
             voice_prompt = transcript.text
             st.toast(f"인식된 텍스트: {voice_prompt}", icon="🎙️")
 
-    # 입력 처리 (음성 또는 텍스트)
+    # ── 입력 처리 (추천 버튼 / 음성 / 텍스트) ─────────────────────────────────
     typed_prompt = st.chat_input("예: 도쿄 3박 4일 여행 계획 짜줘 (예산 100만원)")
-    prompt = voice_prompt or typed_prompt
+    suggested_prompt = st.session_state.pop("_suggested", None)
+    prompt = suggested_prompt or voice_prompt or typed_prompt
+
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -274,18 +292,18 @@ else:
                 icon="⚠️",
             )
 
-        # 장소 추출 → 지오코딩 → 세션에 누적
-        with st.spinner("지도에 장소를 표시하는 중..."):
-            new_places = extract_places(client, response)
-            added = 0
-            for place in new_places:
-                if place in st.session_state.geocoded_names:
-                    continue
-                result = geocode(place)
-                st.session_state.geocoded_names.add(place)
-                if result:
-                    st.session_state.map_locations.append(result)
-                    added += 1
+        # ── 3. 장소 추출 — 스피너 없이 조용히 처리, 완료 시 toast ──────────────
+        new_places = extract_places(client, response)
+        added = 0
+        for place in new_places:
+            if place in st.session_state.geocoded_names:
+                continue
+            result = geocode(place)
+            st.session_state.geocoded_names.add(place)
+            if result:
+                st.session_state.map_locations.append(result)
+                added += 1
 
         if added:
+            st.toast(f"지도에 {added}개 장소를 추가했습니다.", icon="📍")
             st.rerun()
