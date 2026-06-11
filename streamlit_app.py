@@ -196,6 +196,14 @@ div[data-testid="stButton"] > button.suggest-btn:hover {
 </div>
 """, unsafe_allow_html=True)
 
+TRAVEL_STYLES = {
+    "🎨 힙쟁이": "트렌디한 카페, 감성 골목, 인스타 핫플, 로컬 편집샵 위주로 추천해줘.",
+    "🍜 먹방러": "현지 맛집, 길거리 음식, 야시장, 숨은 로컬 식당 위주로 추천해줘.",
+    "🏖️ 휴양러": "리조트, 해변, 스파, 풀빌라 등 힐링과 여유 위주로 추천해줘.",
+    "🏛️ 문화탐방러": "박물관, 유적지, 전통시장, 현지 문화 체험 위주로 추천해줘.",
+    "🛍️ 쇼핑러": "쇼핑몰, 로컬 마켓, 편집샵, 면세점 등 쇼핑 위주로 추천해줘.",
+}
+
 with st.sidebar:
     st.header("⚙️ 설정")
     openai_api_key = st.text_input("OpenAI API Key", type="password")
@@ -203,17 +211,28 @@ with st.sidebar:
 
     st.divider()
 
-    system_prompt = st.text_area(
-        "System Prompt",
-        value=(
+    st.markdown("**🧳 내 여행 스타일**")
+    st.caption("해당하는 스타일을 모두 선택하세요.")
+    selected_styles = [
+        label for label in TRAVEL_STYLES
+        if st.checkbox(label, key=f"style_{label}")
+    ]
+
+    if selected_styles:
+        style_desc = " ".join(TRAVEL_STYLES[s] for s in selected_styles)
+        system_prompt = (
+            f"당신은 친절하고 경험 많은 여행 플래너입니다. "
+            f"사용자의 여행 스타일은 {', '.join(selected_styles)} 입니다. "
+            f"{style_desc} "
+            f"항상 한국어로 답변하며 실용적이고 구체적인 조언을 제공합니다."
+        )
+    else:
+        system_prompt = (
             "당신은 친절하고 경험 많은 여행 플래너입니다. "
             "사용자의 여행 목적지, 일정, 예산, 관심사를 파악하여 "
-            "맞춤형 여행 계획, 관광지 추천, 현지 음식, 교통편, 숙소 정보를 제공합니다. "
-            "항상 한국어로 답변하며, 실용적이고 구체적인 조언을 제공합니다."
-        ),
-        height=160,
-        help="챗봇의 역할과 성격을 정의합니다.",
-    )
+            "맞춤형 여행 계획을 제안합니다. "
+            "항상 한국어로 답변하며 실용적이고 구체적인 조언을 제공합니다."
+        )
 
     st.divider()
 
