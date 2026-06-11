@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(claude-api)",
+      "Skill(code-review)",
+      "Bash(cat)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
