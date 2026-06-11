@@ -90,6 +90,39 @@ def identify_place_from_image(client: OpenAI, image_bytes: bytes, mime_type: str
     return None if name == "UNKNOWN" else name
 
 
+def generate_travel_plan(client: OpenAI, messages: list[dict]) -> str:
+    """대화 내역을 바탕으로 구조화된 여행 계획서를 생성."""
+    conversation = "\n".join(
+        f"[{'사용자' if m['role'] == 'user' else 'AI'}] {m['content']}"
+        for m in messages
+        if m["role"] in ("user", "assistant")
+    )
+    res = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "당신은 여행 플래너입니다. 아래 대화 내역을 분석해서 "
+                    "사용자 맞춤 여행 계획서를 한국어 마크다운으로 작성하세요.\n\n"
+                    "반드시 아래 구조를 따르세요:\n"
+                    "# ✈️ 나의 여행 계획서\n"
+                    "## 📌 여행 개요 (목적지·기간·예산·여행 스타일)\n"
+                    "## 🗓️ 일별 일정 (Day 1 ~ Day N, 오전/오후/저녁 구분)\n"
+                    "## 🍽️ 추천 맛집 & 카페\n"
+                    "## 🏨 숙소 추천\n"
+                    "## 🚌 교통 정보\n"
+                    "## 💰 예산 계획 (항목별 예상 비용)\n"
+                    "## 💡 여행 꿀팁\n\n"
+                    "대화에서 언급되지 않은 항목은 대화 맥락을 바탕으로 적절히 채워주세요."
+                ),
+            },
+            {"role": "user", "content": f"다음 대화를 바탕으로 여행 계획서를 작성해주세요:\n\n{conversation}"},
+        ],
+    )
+    return res.choices[0].message.content
+
+
 def build_map(locations: list[tuple]) -> folium.Map:
     """locations: [(lat, lon, display_name), ...] → folium.Map"""
     lats = [loc[0] for loc in locations]
@@ -190,10 +223,15 @@ with st.sidebar:
     if "map_locations" in st.session_state:
         st.caption(f"지도 마커: {len(st.session_state.map_locations)}개")
 
+    if st.button("📋 여행 계획서 만들기", use_container_width=True, type="primary"):
+        st.session_state["_make_plan"] = True
+        st.rerun()
+
     if st.button("🗑️ Clear chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.map_locations = []
         st.session_state.geocoded_names = set()
+        st.session_state.pop("travel_plan", None)
         st.rerun()
 
 
@@ -202,8 +240,18 @@ if not openai_api_key:
 else:
     client = OpenAI(api_key=openai_api_key)
 
+    WELCOME = (
+        "안녕하세요! 저는 AI 여행 플래너입니다 ✈️\n\n"
+        "목적지, 일정, 예산을 알려주시면 맞춤 여행 계획을 도와드립니다. "
+        "아래 예시 중 하나를 골라보세요!\n\n"
+        "- 🗼 **도쿄 3박 4일** 추천해줘 (예산 100만원)\n"
+        "- 🏖️ **방콕 가성비** 여행 계획 짜줘\n"
+        "- 🗺️ **유럽 2주** 일정 짜줘\n"
+        "- 🍊 **제주도 당일치기** 코스 알려줘"
+    )
+
     if "messages" not in st.session_state:
-        st.session_state.messages = []
+        st.session_state.messages = [{"role": "assistant", "content": WELCOME}]
     if "map_locations" not in st.session_state:
         st.session_state.map_locations = []
     if "geocoded_names" not in st.session_state:
@@ -212,54 +260,63 @@ else:
         st.session_state.last_audio_hash = None
     if "last_image_hash" not in st.session_state:
         st.session_state.last_image_hash = None
+    if "travel_plan" not in st.session_state:
+        st.session_state.travel_plan = None
 
-    # ── 2. 사이드바 하단에 지도 표시 ─────────────────────────────────────────
-    with st.sidebar:
-        if st.session_state.map_locations:
-            st.divider()
-            st.subheader("🗺️ 추천 장소 지도")
-            st_folium(
-                build_map(st.session_state.map_locations),
-                use_container_width=True,
-                height=320,
-                returned_objects=[],
-            )
+    # ── 여행 계획서 생성 트리거 ───────────────────────────────────────────────
+    if st.session_state.pop("_make_plan", False):
+        user_msgs = [m for m in st.session_state.messages if m["role"] != "assistant" or m["content"] != st.session_state.messages[0]["content"]]
+        if len(user_msgs) < 2:
+            st.toast("대화를 조금 더 나눈 뒤 계획서를 만들어보세요!", icon="💬")
+        else:
+            with st.spinner("여행 계획서를 작성하는 중입니다..."):
+                st.session_state.travel_plan = generate_travel_plan(client, st.session_state.messages)
 
     # ── 대화 출력 ────────────────────────────────────────────────────────────
+    SUGGESTIONS = [
+        ("🗼", "도쿄 3박 4일 추천해줘 (예산 100만원)"),
+        ("🏖️", "방콕 가성비 여행 계획 짜줘"),
+        ("🗺️", "유럽 2주 일정 짜줘"),
+        ("🍊", "제주도 당일치기 코스 알려줘"),
+    ]
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # ── 1. 빈 화면 — 추천 질문 카드 ─────────────────────────────────────────
-    if not st.session_state.messages:
-        st.markdown("#### 어떤 여행을 계획하고 계신가요?")
-        suggestions = [
-            ("🗼", "도쿄 3박 4일", "도쿄 3박 4일 추천해줘 (예산 100만원)"),
-            ("🏖️", "방콕 가성비", "방콕 가성비 여행 계획 짜줘"),
-            ("🗺️", "유럽 2주", "유럽 2주 일정 짜줘"),
-            ("🍊", "제주 당일치기", "제주도 당일치기 코스 알려줘"),
-        ]
-        col1, col2 = st.columns(2)
-        for i, (icon, label, query) in enumerate(suggestions):
-            col = col1 if i % 2 == 0 else col2
-            with col:
-                st.markdown(f"""
-                <div style="
-                    background:#1A2744;
-                    border:1px solid #2a3f6f;
-                    border-radius:12px;
-                    padding:16px 18px;
-                    margin-bottom:10px;
-                    cursor:pointer;
-                ">
-                    <div style="font-size:1.6rem;margin-bottom:6px">{icon}</div>
-                    <div style="font-weight:700;color:#e0eeff;font-size:0.95rem">{label}</div>
-                    <div style="color:#7a9cc8;font-size:0.8rem;margin-top:4px">{query}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button("선택", key=f"sug_{i}", use_container_width=True):
-                    st.session_state["_suggested"] = query
-                    st.rerun()
+    # 웰컴 메시지 다음에만 추천 칩 표시
+    if len(st.session_state.messages) == 1 and st.session_state.messages[0]["role"] == "assistant":
+        cols = st.columns(2)
+        for i, (icon, query) in enumerate(SUGGESTIONS):
+            if cols[i % 2].button(f"{icon} {query}", key=f"sug_{i}", use_container_width=True):
+                st.session_state["_suggested"] = query
+                st.rerun()
+
+    # ── 지도 출력 (채팅 답변 아래) ───────────────────────────────────────────
+    if st.session_state.map_locations:
+        with st.chat_message("assistant"):
+            st.subheader("🗺️ 추천 장소 지도")
+            st_folium(
+                build_map(st.session_state.map_locations),
+                use_container_width=True,
+                height=420,
+                returned_objects=[],
+            )
+
+    # ── 여행 계획서 표시 ──────────────────────────────────────────────────────
+    if st.session_state.travel_plan:
+        st.divider()
+        st.markdown(st.session_state.travel_plan)
+        st.download_button(
+            label="📥 계획서 다운로드 (.md)",
+            data=st.session_state.travel_plan,
+            file_name="여행계획서.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
+        if st.button("🔄 계획서 다시 생성", use_container_width=True):
+            st.session_state["_make_plan"] = True
+            st.session_state.travel_plan = None
+            st.rerun()
 
     # ── 입력 영역 ────────────────────────────────────────────────────────────
     with st.expander("📷 이미지로 장소 찾기"):
