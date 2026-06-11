@@ -212,11 +212,26 @@ with st.sidebar:
     st.divider()
 
     st.markdown("**🧳 내 여행 스타일**")
-    st.caption("해당하는 스타일을 모두 선택하세요.")
-    selected_styles = [
-        label for label in TRAVEL_STYLES
-        if st.checkbox(label, key=f"style_{label}")
-    ]
+    st.caption("나에게 맞는 스타일을 눌러보세요. (복수 선택 가능)")
+
+    if "active_styles" not in st.session_state:
+        st.session_state.active_styles = []
+
+    for label in TRAVEL_STYLES:
+        is_on = label in st.session_state.active_styles
+        if st.button(
+            f"{'✅ ' if is_on else ''}{label}",
+            key=f"style_btn_{label}",
+            use_container_width=True,
+            type="primary" if is_on else "secondary",
+        ):
+            if is_on:
+                st.session_state.active_styles.remove(label)
+            else:
+                st.session_state.active_styles.append(label)
+            st.rerun()
+
+    selected_styles = st.session_state.active_styles
 
     if selected_styles:
         style_desc = " ".join(TRAVEL_STYLES[s] for s in selected_styles)
@@ -253,6 +268,12 @@ with st.sidebar:
         st.session_state.pop("travel_plan", None)
         st.rerun()
 
+
+if st.session_state.get("active_styles"):
+    pills = " ".join(f"`{s}`" for s in st.session_state.active_styles)
+    st.markdown(f"**현재 여행 스타일:** {pills}")
+else:
+    st.caption("왼쪽 사이드바에서 여행 스타일을 선택하면 맞춤 추천을 받을 수 있어요.")
 
 if not openai_api_key:
     st.info("사이드바에 OpenAI API 키를 입력하면 여행 계획을 시작할 수 있습니다.", icon="🗝️")
