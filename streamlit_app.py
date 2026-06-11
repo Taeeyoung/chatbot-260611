@@ -111,7 +111,57 @@ def build_map(locations: list[tuple]) -> folium.Map:
 
 # ── 앱 ──────────────────────────────────────────────────────────────────────
 
-st.title("✈️ 여행 플래너 챗봇")
+st.markdown("""
+<style>
+/* 헤더 배너 */
+.travel-header {
+    background: linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #0277bd 100%);
+    border-radius: 16px;
+    padding: 32px 36px 28px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+.travel-header h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0 0 8px 0;
+    letter-spacing: -0.5px;
+}
+.travel-header p {
+    font-size: 1rem;
+    color: #b3d9f7;
+    margin: 0;
+}
+
+/* 추천 질문 카드 버튼 */
+div[data-testid="stButton"] > button.suggest-btn {
+    background: #1A2744;
+    border: 1px solid #2a3f6f;
+    border-radius: 12px;
+    padding: 14px 16px;
+    text-align: left;
+    font-size: 0.9rem;
+    color: #e0eeff;
+    transition: all 0.2s;
+    height: auto;
+    white-space: normal;
+    line-height: 1.5;
+}
+div[data-testid="stButton"] > button.suggest-btn:hover {
+    background: #223060;
+    border-color: #4FC3F7;
+    color: #ffffff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(79,195,247,0.2);
+}
+</style>
+
+<div class="travel-header">
+    <h1>🌏 여행 플래너</h1>
+    <p>AI와 함께 나만의 완벽한 여행을 계획해보세요</p>
+</div>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("⚙️ 설정")
@@ -146,7 +196,6 @@ with st.sidebar:
         st.session_state.geocoded_names = set()
         st.rerun()
 
-st.caption("목적지, 예산, 일정을 알려주시면 맞춤 여행 계획을 도와드립니다 🗺️")
 
 if not openai_api_key:
     st.info("사이드바에 OpenAI API 키를 입력하면 여행 계획을 시작할 수 있습니다.", icon="🗝️")
@@ -181,20 +230,36 @@ else:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # ── 1. 빈 화면 — 추천 질문 버튼 ──────────────────────────────────────────
+    # ── 1. 빈 화면 — 추천 질문 카드 ─────────────────────────────────────────
     if not st.session_state.messages:
-        st.markdown("**어떤 여행을 계획하고 계신가요? 아래 예시를 클릭해보세요.**")
+        st.markdown("#### 어떤 여행을 계획하고 계신가요?")
         suggestions = [
-            "도쿄 3박 4일 추천해줘 (예산 100만원)",
-            "방콕 가성비 여행 계획 짜줘",
-            "유럽 2주 일정 짜줘",
-            "제주도 당일치기 코스 알려줘",
+            ("🗼", "도쿄 3박 4일", "도쿄 3박 4일 추천해줘 (예산 100만원)"),
+            ("🏖️", "방콕 가성비", "방콕 가성비 여행 계획 짜줘"),
+            ("🗺️", "유럽 2주", "유럽 2주 일정 짜줘"),
+            ("🍊", "제주 당일치기", "제주도 당일치기 코스 알려줘"),
         ]
         col1, col2 = st.columns(2)
-        for i, s in enumerate(suggestions):
-            if (col1 if i % 2 == 0 else col2).button(s, use_container_width=True):
-                st.session_state["_suggested"] = s
-                st.rerun()
+        for i, (icon, label, query) in enumerate(suggestions):
+            col = col1 if i % 2 == 0 else col2
+            with col:
+                st.markdown(f"""
+                <div style="
+                    background:#1A2744;
+                    border:1px solid #2a3f6f;
+                    border-radius:12px;
+                    padding:16px 18px;
+                    margin-bottom:10px;
+                    cursor:pointer;
+                ">
+                    <div style="font-size:1.6rem;margin-bottom:6px">{icon}</div>
+                    <div style="font-weight:700;color:#e0eeff;font-size:0.95rem">{label}</div>
+                    <div style="color:#7a9cc8;font-size:0.8rem;margin-top:4px">{query}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button("선택", key=f"sug_{i}", use_container_width=True):
+                    st.session_state["_suggested"] = query
+                    st.rerun()
 
     # ── 입력 영역 ────────────────────────────────────────────────────────────
     with st.expander("📷 이미지로 장소 찾기"):
