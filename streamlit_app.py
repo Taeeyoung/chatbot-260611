@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import json
@@ -56,6 +57,37 @@ def extract_places(client: OpenAI, text: str) -> list[str]:
     except Exception:
         pass
     return []
+
+
+def identify_place_from_image(client: OpenAI, image_bytes: bytes, mime_type: str) -> str | None:
+    """이미지에서 장소명을 영어로 추출. 인식 불가 시 None."""
+    b64 = base64.b64encode(image_bytes).decode()
+    res = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64}"},
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "What specific place, restaurant, cafe, landmark, or shop is shown in this image? "
+                            "Reply with ONLY the place name in English (e.g. 'Tsukiji Outer Market, Tokyo'). "
+                            "If you cannot identify a specific location, reply with exactly: UNKNOWN"
+                        ),
+                    },
+                ],
+            }
+        ],
+        max_tokens=100,
+        temperature=0,
+    )
+    name = res.choices[0].message.content.strip()
+    return None if name == "UNKNOWN" else name
 
 
 def build_map(locations: list[tuple]) -> folium.Map:
@@ -129,6 +161,45 @@ else:
         st.session_state.geocoded_names = set()
     if "last_audio_hash" not in st.session_state:
         st.session_state.last_audio_hash = None
+    if "last_image_hash" not in st.session_state:
+        st.session_state.last_image_hash = None
+
+    # 이미지 업로드
+    uploaded_file = st.file_uploader(
+        "📷 장소 이미지 업로드 (가게·명소 사진을 올리면 지도에 표시해드립니다)",
+        type=["jpg", "jpeg", "png", "webp"],
+        label_visibility="visible",
+    )
+    if uploaded_file:
+        image_bytes = uploaded_file.read()
+        image_hash = hashlib.md5(image_bytes).hexdigest()
+        if image_hash != st.session_state.last_image_hash:
+            st.session_state.last_image_hash = image_hash
+            col_img, col_result = st.columns([1, 2])
+            with col_img:
+                st.image(image_bytes, use_container_width=True)
+            with col_result:
+                with st.spinner("이미지에서 장소를 인식하는 중..."):
+                    place_name = identify_place_from_image(client, image_bytes, uploaded_file.type)
+                if place_name:
+                    result = geocode(place_name)
+                    if result and place_name not in st.session_state.geocoded_names:
+                        st.session_state.geocoded_names.add(place_name)
+                        st.session_state.map_locations.append(result)
+                        st.success(f"📍 지도에 추가됨: **{result[2].split(',')[0]}**")
+                        msg = f"이미지에서 **{place_name}** 를 인식했습니다. 지도에 표시했습니다."
+                    elif result:
+                        st.info(f"이미 지도에 표시된 장소입니다: {result[2].split(',')[0]}")
+                        msg = None
+                    else:
+                        st.warning(f"'{place_name}' 의 좌표를 찾지 못했습니다.")
+                        msg = None
+                else:
+                    st.warning("이미지에서 특정 장소를 인식하지 못했습니다. 더 선명하거나 간판이 보이는 사진을 시도해보세요.")
+                    msg = None
+                if msg:
+                    st.session_state.messages.append({"role": "assistant", "content": msg})
+                    st.rerun()
 
     # 대화 출력
     for message in st.session_state.messages:
